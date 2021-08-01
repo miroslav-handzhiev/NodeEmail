@@ -37,7 +37,6 @@ app.post('/getUserEmails',urlencodedParser, (req, res) => {
 
       function openInbox(cb) {
         imap.openBox('INBOX', true, cb);
-        imap.openBox('SENT', true, cb);
       }
       
       imap.once('ready', function() {
