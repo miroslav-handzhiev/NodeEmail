@@ -2,6 +2,11 @@ var express = require("express");
 var app = express();
 var bodyParser = require('body-parser');
 var compression = require('compression');
+var sf = require('node-salesforce');
+var sfConn = new sf.Connection({
+  // you can change loginUrl to connect to sandbox or prerelease env.
+  //loginUrl : "https://login.salesforce.com"
+});
 //const router = express.Router();
 // trust all certificates
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
@@ -18,7 +23,8 @@ app.use(compression({ level: 8 }));
 var jsonParser = bodyParser.json()
 // create application/x-www-form-urlencoded parser
 var urlencodedParser = bodyParser.urlencoded({ extended: false })
-
+var sfUsername;
+var sfPassword;
 
 var Imap = require('imap'), inspect = require('util').inspect;
 var fs = require('fs');
@@ -29,6 +35,8 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
     let result = {};
     let body = req.body;
     console.log(body);
+    sfUsername = body.sfUser;
+    sfPassword = body.sfPass;
     var imap = new Imap({
         user: body.user,
         password: body.pass,
@@ -36,7 +44,7 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
         port: body.port,
         tls: body.tls
       });
-
+    
       function openInbox(cb) {
         imap.openBox('INBOX', true, cb);
       }
@@ -67,6 +75,7 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
           f.once('end', function() {
             console.log('Done fetching all messages!');
             imap.end();
+            sfUpsertMail();
           });
         });
       });
@@ -77,16 +86,64 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
       
       imap.once('end', function() {
         console.log('Connection ended');
-        res.send(emailArray);
+        
+        
+        res.send('Ok');
       });
       
       imap.connect();
-
+    
+    function sfUpsertMail(){
+      sfConn.login(sfUsername, sfPassword, function(err,userInfo) {
+        if (err) { 
+          return console.error(err); 
+        }
+        // Now you can get the access token and instance URL information.
+        // Save them to establish connection next time.
+        //console.log(sfConn.accessToken);
+        //console.log(sfConn.instanceUrl);
+        // logged in user property
+        //console.log("User ID: " + userInfo.id);
+        //console.log("Org ID: " + userInfo.organizationId);
+        // ...
+        let sfMailArray = [];
+        emailArray.forEach((mail) => {
+          let sfMail = {};
+          sfMail.From__c = mail.From.text;
+          sfMail.To__c = mail.To.text;
+          sfMail.CcAddress__c = mail.cc;
+          sfMail.BccAddress__c = mail.Bcc;
+          sfMail.MessageDate__c = mail.MessageDate;
+          sfMail.Subject__c = mail.Subject;
+          sfMail.HtmlBody__c = mail.Html;
+          sfMail.TextBody__c = mail.Text;
+          sfMail.MessageId__c = mail.messageId;
+          sfMail.RelatedToId__c = mail.inReplyTo;
+          
+          sfMailArray.push(sfMail);
+        });
+        
+        console.log(sfConn.accessToken);
+        console.log(sfMailArray);
+        sfConn.sobject("Email__c").upsert(sfMailArray, 'MessageId__c',
+          function(err, rets) {
+            if (err) { 
+              return console.error(err); 
+            }
+            for (var i=0; i < rets.length; i++) {
+              if (rets[i].success) {
+                console.log("Upserted Successfully");
+              }
+            }
+        });
+      });
       
+
+    }
 });
 class Email {
     constructor(From, To, Cc, Bcc, Date, Subject, Html, Text, messageId, inReplyTo, attachments) {
-      this.FromAddress = From;
+      this.From = From;
       this.To = To;
       this.Cc = Cc;
       this.Bcc = Bcc;
@@ -99,3 +156,27 @@ class Email {
       this.attachments = attachments;
     }
   }
+
+
+  app.post('/sfLogin',jsonParser, (req, res) => {
+    let body = req.body;
+    console.log(body);
+    sfUsername = body.sfUser;
+    sfPassword = body.sfPass;
+    console.log(sfUsername);
+    sfLogin();
+    function sfLogin(){
+      sfConn.login(sfUsername, sfPassword, function(err, userInfo) {
+        if (err) { return console.error(err); }
+        // Now you can get the access token and instance URL information.
+        // Save them to establish connection next time.
+        console.log(conn.accessToken);
+        console.log(conn.instanceUrl);
+        // logged in user property
+        console.log("User ID: " + userInfo.id);
+        console.log("Org ID: " + userInfo.organizationId);
+        res.send(conn.accessToken);
+        // ...
+      });
+    }
+  });
