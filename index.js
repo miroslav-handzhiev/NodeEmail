@@ -56,8 +56,8 @@ app.post('/getUserEmails',urlencodedParser, (req, res) => {
               simpleParser(stream, (err, mail) => {
                 emailArray.push(new Email(mail.from, mail.to, mail.cc, mail.bcc,
                     mail.date, mail.subject, mail.html, mail.text, mail.messageId, mail.inReplyTo,
-                    ''));
-                    // mail.attachments));
+                  //  ''));
+                     mail.attachments));
               });
             });
           });
@@ -86,11 +86,11 @@ app.post('/getUserEmails',urlencodedParser, (req, res) => {
 });
 class Email {
     constructor(From, To, Cc, Bcc, Date, Subject, Html, Text, messageId, inReplyTo, attachments) {
-      this.From = From;
+      this.FromAddress = From;
       this.To = To;
       this.Cc = Cc;
       this.Bcc = Bcc;
-      this.Date = Date;
+      this.MessageDate = Date;
       this.Subject = Subject;
       this.Html = Html;
       this.Text = Text;
