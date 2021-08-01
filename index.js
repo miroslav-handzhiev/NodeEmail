@@ -35,15 +35,14 @@ app.post('/getUserEmails',urlencodedParser, (req, res) => {
       });
 
       function openInbox(cb) {
-        console.log(imap.getBoxes());
         imap.openBox('INBOX', true, cb);
+        imap.openBox('SENT', true, cb);
       }
       
       imap.once('ready', function() {
         openInbox(function(err, box) {
           if (err) throw err;
           console.log(box.messages.total + ' message(s) found!');
-          console.log(box.messages);
           // 1:* - Retrieve all messages
           var f = imap.seq.fetch('1:*', {
             bodies: ''
@@ -53,8 +52,6 @@ app.post('/getUserEmails',urlencodedParser, (req, res) => {
             msg.on('body', function(stream, info) {
               // use a specialized mail parsing library (https://github.com/andris9/mailparser)
               simpleParser(stream, (err, mail) => {
-                console.log(mail);
-                //console.log(prefix + mail.subject);
                 emailArray.push(new Email(mail.from, mail.to, mail.cc, mail.bcc,
                     mail.date, mail.subject, mail.html, mail.text, mail.messageId, mail.inReplyTo, mail.attachments));
               });
@@ -76,7 +73,7 @@ app.post('/getUserEmails',urlencodedParser, (req, res) => {
       
       imap.once('end', function() {
         console.log('Connection ended');
-        res.send(emailArray);        
+        res.send(emailArray);
       });
       
       imap.connect();
