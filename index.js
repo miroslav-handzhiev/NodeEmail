@@ -24,7 +24,7 @@ var Imap = require('imap'), inspect = require('util').inspect;
 var fs = require('fs');
 const simpleParser = require('mailparser').simpleParser;
 
-app.post('/getUserEmails',urlencodedParser, (req, res) => {
+app.post('/getUserEmails',jsonParser, (req, res) => {
     let emailArray = [];
     let result = {};
     let body = req.body;
