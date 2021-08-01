@@ -4,6 +4,11 @@ var bodyParser = require('body-parser')
 //const router = express.Router();
 // trust all certificates
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+var server_port = process.env.YOUR_PORT || process.env.PORT || 8000;
+var server_host = process.env.YOUR_HOST || '0.0.0.0';
+app.listen(server_port, server_host, function() {
+    console.log('Listening on port %d', server_port);
+});
 
 
 // create application/json parser
@@ -11,9 +16,6 @@ var jsonParser = bodyParser.json()
 // create application/x-www-form-urlencoded parser
 var urlencodedParser = bodyParser.urlencoded({ extended: false })
 
-app.listen(3000, () => {
-    console.log("Server running on port 3000");
-   });
 
 var Imap = require('imap'), inspect = require('util').inspect;
 var fs = require('fs');
