@@ -1,6 +1,7 @@
 var express = require("express");
 var app = express();
-var bodyParser = require('body-parser')
+var bodyParser = require('body-parser');
+var compression = require('compression');
 //const router = express.Router();
 // trust all certificates
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
@@ -11,6 +12,7 @@ var server = app.listen(server_port, server_host, function() {
 });
 
 server.setTimeout(500000);
+app.use(compression());
 
 // create application/json parser
 var jsonParser = bodyParser.json()
