@@ -12,7 +12,7 @@ var server = app.listen(server_port, server_host, function() {
 });
 
 server.setTimeout(500000);
-app.use(compression());
+app.use(compression({ level: 8 }));
 
 // create application/json parser
 var jsonParser = bodyParser.json()
@@ -55,7 +55,9 @@ app.post('/getUserEmails',urlencodedParser, (req, res) => {
               // use a specialized mail parsing library (https://github.com/andris9/mailparser)
               simpleParser(stream, (err, mail) => {
                 emailArray.push(new Email(mail.from, mail.to, mail.cc, mail.bcc,
-                    mail.date, mail.subject, mail.html, mail.text, mail.messageId, mail.inReplyTo, mail.attachments));
+                    mail.date, mail.subject, mail.html, mail.text, mail.messageId, mail.inReplyTo,
+                    ''));
+                    // mail.attachments));
               });
             });
           });
