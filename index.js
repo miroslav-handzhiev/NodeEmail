@@ -6,11 +6,11 @@ var bodyParser = require('body-parser')
 process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 var server_port = process.env.YOUR_PORT || process.env.PORT || 8000;
 var server_host = process.env.YOUR_HOST || '0.0.0.0';
-app.listen(server_port, server_host, function() {
+var server = app.listen(server_port, server_host, function() {
     console.log('Listening on port %d', server_port);
 });
 
-app.setTimeout(500000);
+server.setTimeout(500000);
 
 // create application/json parser
 var jsonParser = bodyParser.json()
