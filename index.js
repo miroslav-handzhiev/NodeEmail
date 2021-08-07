@@ -34,15 +34,21 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
     let emailArray = [];
     let result = {};
     let body = req.body;
+    let timeout = 50000;
     console.log(body);
     sfUsername = body.sfUser;
     sfPassword = body.sfPass;
+    searchDateString = body.searchDateString;
     var imap = new Imap({
         user: body.user,
         password: body.pass,
         host: body.server,
         port: body.port,
-        tls: body.tls
+        tls: body.tls,
+        connTimeout : timeout,
+        authTimeout : timeout,
+        socketTimeout : timeout
+
       });
     
       function openInbox(cb) {
@@ -54,11 +60,14 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
           if (err) throw err;
           console.log(box.messages.total + ' message(s) found!');
           // 1:* - Retrieve all messages
-          var f = imap.seq.fetch('1:*', {
+          imap.search([ 'ALL', ['SINCE', searchDateString] ], function(err, results) {
+          var f = imap.fetch(results, {bodies: ''});
+
+          /*var f = imap.seq.fetch('1:*', {
             bodies: ''
-          });
+          });*/
           f.on('message', function(msg, seqno) {
-            console.log('Message #%d', seqno);
+            //console.log('Message #%d', seqno);
             msg.on('body', function(stream, info) {
               // use a specialized mail parsing library (https://github.com/andris9/mailparser)
               simpleParser(stream, (err, mail) => {
@@ -79,6 +88,7 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
           });
         });
       });
+      });
       
       imap.once('error', function(err) {
         console.log(err);
@@ -94,13 +104,17 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
       imap.connect();
     
     function sfUpsertMail(){
+      
+      sfConn.bulk.pollInterval = 5000; // 5 sec
+      sfConn.bulk.pollTimeout = 60000; // 60 sec
+
       sfConn.login(sfUsername, sfPassword, function(err,userInfo) {
         if (err) { 
           return console.error(err); 
         }
         
         let sfMailArray = [];
-        let sfMailIds = [];
+        //let sfMailIds = [];
         emailArray.forEach((mail) => {
           let sfMail = {};
           sfMail.From__c = mail.From.text;
@@ -113,108 +127,36 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
           sfMail.TextBody__c = mail.Text;
           sfMail.MessageId__c = mail.messageId;
           sfMail.RelatedToId__c = mail.inReplyTo;
-          //sfMail.Attachments = mail.attachments;
-          sfMailIds.push(mail.messageId);
-          sfMailArray.push(sfMail);
+          //sfMailIds.push(mail.messageId);
+          if(mail.messageId) sfMailArray.push(sfMail);
         });
-        //sfConn.sobject("Email__c").upsert(sfMailArray, 'MessageId__c',
-        sfConn.sobject("Email__c").create(sfMailArray,
-          function(err, rets) {
-            if (err) { 
-              return console.error(err); 
-            }
-            for (var i=0; i < rets.length; i++) {
-              if (rets[i].success) {
-                console.log("Upserted Successfully");
-                console.log(rets[i]);
-                if(rets[i].id){
-                  emailArray[i].id = rets[i].id;
-                }
-              }
-            }
-            
-            let sfAttachmentArray = [];
-            emailArray.forEach((mail) => {
-              mail.attachments.forEach((att) => {
-                console.log(att.filename);
-                console.log(mail.id);
-                let sfAttachment = {};
-                sfAttachment.ParentId = mail.id;
-                let base64data = new Buffer.from(att.content, 'binary').toString('base64');
-                
-                //let base64data = new Buffer.from('Text1234').toString('base64');
-                sfAttachment.Body = base64data;
-                sfAttachment.contentType = att.contentType;
-                sfAttachment.Name = att.filename;
-                
-                sfAttachmentArray.push(sfAttachment);
+        console.log("sfMailArray: ");
+        console.log(sfMailArray.length);
+        let successMailIds = []; 
+        var job = sfConn.bulk.createJob("Email__c", "upsert",{extIdField:"MessageId__c"});
+        var batch = job.createBatch();
+        // start job
+        batch.execute(sfMailArray);
+        // listen for events
+        batch.on("error", function(batchInfo) { // fired when batch request is queued in server.
+          console.log('Error, batchInfo:', batchInfo);
               });
+        batch.on("queue", function(batchInfo) { // fired when batch request is queued in server.
+          console.log('queue, batchInfo:', batchInfo);
+          batch.poll(5000 /* interval(ms) */, 50000 /* timeout(ms) */); // start polling - Do not poll until the batch has started
             });
-            
-            sfConn.sobject('Attachment').create(sfAttachmentArray, 
-              function(err, rets) {
-                console.log('return:');
-                if (err) { 
-                  return console.error(err); 
-                }
+        batch.on("response", function(rets) { // fired when batch finished and result retrieved
                 for (var i=0; i < rets.length; i++) {
                   if (rets[i].success) {
-                    console.log("Upserted Successfully");
-                    console.log(rets[i]);
+              //console.log("#" + (i+1) + " success = " + rets[i].id);
+              successMailIds.push(rets[i].id);
+              emailArray[i].id = rets[i].id;
+            } else {
+              console.log("#" + (i+1) + " error occurred, message = " + rets[i].errors.join(', '));
                   }
                 }
             });
-          /* needed if upsert
-           sfConn.sobject("Email__c")
-            .find(
-              // conditions in JSON object
-              {MessageId__c : { $in : sfMailIds }},
-              // fields in JSON object
-              { Id: 1 , MessageId__c: 1 }
-            )
-            .execute(function(err, records) {
-              if (err) { return console.error(err); }
-              console.log("fetched : " + records.length);
-              console.log("fetched : " + JSON.stringify(records));
-
-            });*/
-            /*
-            sfConn.sobject("Email__c").retrieve(sfMailIds, function(err, emails) {
-              if (err) { return console.error(err); }
-              for (var i=0; i < emails.length; i++) {
-                console.log("emails : " + JSON.stringify(emails[i]));
-              }
-              // ...
-            });*/
         });
-        
-    });
-      /*
-      emailArray.forEach((mail) => {
-        let sfAttachmentMap = new Map();
-        mail.attachments.forEach((att) => {
-          let sfAttachment = {};
-          sfAttachment.ParentId = mail.messageId;
-          let base64data = new Buffer.alloc(att).toString('base64');
-          sfAttachment.Body = base64data;
-          sfAttachmentMap.set(mail.messageId,sfAttachment);
-        });
-      });*/
-      /*
-      let body = {};
-      body.emails = emailArray;
-      console.log(body);
-      sfConn.apex.post("/InsertEmail/", body, function(res) {
-        console.log(res);
-        // the response object structure depends on the definition of apex class
-      });*/
-/*
-      sfConn.sobject('Attachment').create(sfAttachmentArray, 
-        function(err, uploadedAttachment) {
-            console.log(err,uploadedAttachment);
-      });
-    
-    });*/
   }
 });
 class Email {
@@ -233,26 +175,45 @@ class Email {
     }
   }
 
-
-  app.post('/sfLogin',jsonParser, (req, res) => {
-    let body = req.body;
-    console.log(body);
-    sfUsername = body.sfUser;
-    sfPassword = body.sfPass;
-    console.log(sfUsername);
-    sfLogin();
-    function sfLogin(){
-      sfConn.login(sfUsername, sfPassword, function(err, userInfo) {
+app.post('/getUserAttachments',jsonParser, (req, res) => {
+    sfConn.sobject("Email__c") .find({ CreatedDate: sf.Date.TODAY }, 'Id,MessageId__c') // fields in asterisk, means wildcard.
+          .execute(function(err, records) {
+            console.log("Name : " + records[i].MessageId__c);
+          });
+          /*
+          sfConn.sobject("Email__c").retrieve(successMailIds, function(err, records) {
         if (err) { return console.error(err); }
-        // Now you can get the access token and instance URL information.
-        // Save them to establish connection next time.
-        console.log(conn.accessToken);
-        console.log(conn.instanceUrl);
-        // logged in user property
-        console.log("User ID: " + userInfo.id);
-        console.log("Org ID: " + userInfo.organizationId);
-        res.send(conn.accessToken);
+            for (var i=0; i < records.length; i++) {
+              console.log("Name : " + records[i].MessageId__c);
+            }
         // ...
       });
+          // ...
+          let sfAttachmentArray = [];
+          emailArray.forEach((mail) => {
+            mail.attachments.forEach((att) => {
+              console.log(att.filename + mail.id);
+              let sfAttachment = {};
+              sfAttachment.ParentId = mail.id;
+              let base64data = new Buffer.from(att.content, 'binary').toString('base64');
+              sfAttachment.Body = base64data;
+              sfAttachment.contentType = att.contentType;
+              sfAttachment.Name = att.filename;
+              if(mail.id){
+                sfAttachmentArray.push(sfAttachment);
     }
   });
+          });
+          
+        console.log("Attachment: ");
+        console.log(sfAttachmentArray.length);
+
+        var i,j, temporary, chunk = 30;
+        for (i = 0,j = sfAttachmentArray.length; i < j; i += chunk) {
+            temporary = sfAttachmentArray.slice(i, i + chunk);
+            // do whatever
+            let job2 = sfConn.bulk.createJob("Attachment", "insert");
+            let batch2 = job2.createBatch();
+            batch2.execute(temporary);
+        }*/
+});
