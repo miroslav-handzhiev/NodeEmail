@@ -98,15 +98,9 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
         if (err) { 
           return console.error(err); 
         }
-        // Now you can get the access token and instance URL information.
-        // Save them to establish connection next time.
-        //console.log(sfConn.accessToken);
-        //console.log(sfConn.instanceUrl);
-        // logged in user property
-        //console.log("User ID: " + userInfo.id);
-        //console.log("Org ID: " + userInfo.organizationId);
-        // ...
+        
         let sfMailArray = [];
+        let sfMailIds = [];
         emailArray.forEach((mail) => {
           let sfMail = {};
           sfMail.From__c = mail.From.text;
@@ -119,13 +113,12 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
           sfMail.TextBody__c = mail.Text;
           sfMail.MessageId__c = mail.messageId;
           sfMail.RelatedToId__c = mail.inReplyTo;
-          
+          //sfMail.Attachments = mail.attachments;
+          sfMailIds.push(mail.messageId);
           sfMailArray.push(sfMail);
         });
-        
-        console.log(sfConn.accessToken);
-        console.log(sfMailArray);
-        sfConn.sobject("Email__c").upsert(sfMailArray, 'MessageId__c',
+        //sfConn.sobject("Email__c").upsert(sfMailArray, 'MessageId__c',
+        sfConn.sobject("Email__c").create(sfMailArray,
           function(err, rets) {
             if (err) { 
               return console.error(err); 
@@ -133,13 +126,96 @@ app.post('/getUserEmails',jsonParser, (req, res) => {
             for (var i=0; i < rets.length; i++) {
               if (rets[i].success) {
                 console.log("Upserted Successfully");
+                console.log(rets[i]);
+                if(rets[i].id){
+                  emailArray[i].id = rets[i].id;
+                }
               }
             }
-        });
-      });
-      
+            
+            let sfAttachmentArray = [];
+            emailArray.forEach((mail) => {
+              mail.attachments.forEach((att) => {
+                console.log(att.filename);
+                console.log(mail.id);
+                let sfAttachment = {};
+                sfAttachment.ParentId = mail.id;
+                let base64data = new Buffer.from(att.content, 'binary').toString('base64');
+                
+                //let base64data = new Buffer.from('Text1234').toString('base64');
+                sfAttachment.Body = base64data;
+                sfAttachment.contentType = att.contentType;
+                sfAttachment.Name = att.filename;
+                
+                sfAttachmentArray.push(sfAttachment);
+              });
+            });
+            
+            sfConn.sobject('Attachment').create(sfAttachmentArray, 
+              function(err, rets) {
+                console.log('return:');
+                if (err) { 
+                  return console.error(err); 
+                }
+                for (var i=0; i < rets.length; i++) {
+                  if (rets[i].success) {
+                    console.log("Upserted Successfully");
+                    console.log(rets[i]);
+                  }
+                }
+            });
+          /* needed if upsert
+           sfConn.sobject("Email__c")
+            .find(
+              // conditions in JSON object
+              {MessageId__c : { $in : sfMailIds }},
+              // fields in JSON object
+              { Id: 1 , MessageId__c: 1 }
+            )
+            .execute(function(err, records) {
+              if (err) { return console.error(err); }
+              console.log("fetched : " + records.length);
+              console.log("fetched : " + JSON.stringify(records));
 
-    }
+            });*/
+            /*
+            sfConn.sobject("Email__c").retrieve(sfMailIds, function(err, emails) {
+              if (err) { return console.error(err); }
+              for (var i=0; i < emails.length; i++) {
+                console.log("emails : " + JSON.stringify(emails[i]));
+              }
+              // ...
+            });*/
+        });
+        
+    });
+      /*
+      emailArray.forEach((mail) => {
+        let sfAttachmentMap = new Map();
+        mail.attachments.forEach((att) => {
+          let sfAttachment = {};
+          sfAttachment.ParentId = mail.messageId;
+          let base64data = new Buffer.alloc(att).toString('base64');
+          sfAttachment.Body = base64data;
+          sfAttachmentMap.set(mail.messageId,sfAttachment);
+        });
+      });*/
+      /*
+      let body = {};
+      body.emails = emailArray;
+      console.log(body);
+      sfConn.apex.post("/InsertEmail/", body, function(res) {
+        console.log(res);
+        // the response object structure depends on the definition of apex class
+      });*/
+/*
+      sfConn.sobject('Attachment').create(sfAttachmentArray, 
+        function(err, uploadedAttachment) {
+            console.log(err,uploadedAttachment);
+      });
+    
+    });*/
+  }
 });
 class Email {
     constructor(From, To, Cc, Bcc, Date, Subject, Html, Text, messageId, inReplyTo, attachments) {
